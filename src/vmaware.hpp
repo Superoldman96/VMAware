@@ -4,7 +4,7 @@
  * ██║   ██║██╔████╔██║███████║██║ █╗ ██║███████║██████╔╝█████╗
  * ╚██╗ ██╔╝██║╚██╔╝██║██╔══██║██║███╗██║██╔══██║██╔══██╗██╔══╝
  *  ╚████╔╝ ██║ ╚═╝ ██║██║  ██║╚███╔███╔╝██║  ██║██║  ██║███████╗
- *   ╚═══╝  ╚═╝     ╚═╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝ Experimental post-2.4.0 (June 2025)
+ *   ╚═══╝  ╚═╝     ╚═╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝ Experimental post-2.4.1 (June 2025)
  *
  *  C++ VM detection library
  *
@@ -49,14 +49,14 @@
  *
  *
  * ============================== SECTIONS ==================================
- * - enums for publicly accessible techniques  => line 538
- * - struct for internal cpu operations        => line 717
- * - struct for internal memoization           => line 1042
- * - struct for internal utility functions     => line 1183
- * - struct for internal core components       => line 8416
- * - start of VM detection technique list      => line 1993
- * - start of public VM detection functions    => line 8931
- * - start of externally defined variables     => line 9860
+ * - enums for publicly accessible techniques  => line 539
+ * - struct for internal cpu operations        => line 723
+ * - struct for internal memoization           => line 1048
+ * - struct for internal utility functions     => line 1189
+ * - struct for internal core components       => line 8596
+ * - start of VM detection technique list      => line 1999
+ * - start of public VM detection functions    => line 9111
+ * - start of externally defined variables     => line 10044
  *
  *
  * ============================== EXAMPLE ===================================
@@ -521,6 +521,7 @@ namespace brands {
     static constexpr const char* QIHOO = "Qihoo 360 Sandbox";
     static constexpr const char* NSJAIL = "nsjail";
     static constexpr const char* HYPERVISOR_PHANTOM = "Hypervisor-Phantom";
+    static constexpr const char* DBVM = "DBVM";
 }
 
 
@@ -570,6 +571,9 @@ public:
         CUCKOO_DIR,
         CUCKOO_PIPE,
         TRAP,
+        UD,
+        BLOCKSTEP,
+        DBVM,
         
         // Linux and Windows
         SIDT,
@@ -613,6 +617,9 @@ public:
         TEMPERATURE,
         PROCESSES,
 
+        // Linux and MacOS
+        THREAD_COUNT,
+
         // MacOS
         MAC_MEMSIZE,
         MAC_IOKIT,
@@ -628,7 +635,6 @@ public:
         XEON_THREAD_MISMATCH,
         TIMER,
         CPU_BRAND,
-        THREAD_COUNT,
         HYPERVISOR_STR,
         CPUID_SIGNATURE,
         ODD_CPU_THREADS,
@@ -672,8 +678,8 @@ public:
     static constexpr u8 WINDOWS_START = VM::GPU_CAPABILITIES;
     static constexpr u8 WINDOWS_END = VM::VBOX_DEFAULT;
     static constexpr u8 LINUX_START = VM::SIDT;
-    static constexpr u8 LINUX_END = VM::PROCESSES;
-    static constexpr u8 MACOS_START = VM::MAC_MEMSIZE;
+    static constexpr u8 LINUX_END = VM::THREAD_COUNT;
+    static constexpr u8 MACOS_START = VM::THREAD_COUNT;
     static constexpr u8 MACOS_END = VM::HWMODEL;
     
     // this is specifically meant for VM::detected_count() to 
@@ -2132,28 +2138,6 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
         #endif
     }
     
-        
-    /**
-     * @brief Check if there are only 1 or 2 threads, which is a common pattern in VMs with default settings (nowadays physical CPUs should have at least 4 threads for modern CPUs
-     * @category x86 (ARM might have very low thread counts, which is why it should be only for x86)
-     * @implements VM::THREAD_COUNT
-     */
-    [[nodiscard]] static bool thread_count() {
-        #if (x86)
-            debug("THREADCOUNT: ", "threads = ", std::thread::hardware_concurrency());
-    
-            struct cpu::stepping_struct steps = cpu::fetch_steppings();
-    
-            if (cpu::is_celeron(steps)) {
-                return false;
-            }
-    
-            return (std::thread::hardware_concurrency() <= 2);
-        #else 
-            return false;
-        #endif
-    }
-
 
     /**
      * @brief Check for various Bochs-related emulation oversights through CPU checks
@@ -4198,7 +4182,7 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
             return false;
         }
 
-        // checks for __rdtscp support
+        // checks for RDTSCP support
         unsigned aux = 0;
         {
     #if (WINDOWS && x86_64)
@@ -5350,7 +5334,7 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
      * @warning Permissions required
      * @implements VM::VBOX_DEFAULT
      */
-     [[nodiscard]] static bool vbox_default_specs() {
+    [[nodiscard]] static bool vbox_default_specs() {
         /**
          *              RAM     DISK
          * WINDOWS 11:  4096MB, 80GB
@@ -5439,7 +5423,6 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
      * @brief Check for uncommon IDT virtual addresses
      * @author Matteo Malvica (Linux)
      * @author Idea to check VPC's range from Tom Liston and Ed Skoudis' paper "On the Cutting Edge: Thwarting Virtual Machine Detection" (Windows)
-     * @author Paper situated at /papers/ThwartingVMDetection_Liston_Skoudis.pdf (Windows)
      * @link https://www.matteomalvica.com/blog/2018/12/05/detecting-vmware-on-64-bit-systems/ (Linux)
      * @category Windows, Linux, x86
      * @implements VM::SIDT
@@ -5517,11 +5500,6 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
                 __except (EXCEPTION_EXECUTE_HANDLER) {} // CR4.UMIP
 
                 idt_base = *reinterpret_cast<u32*>(&m[2]); // extract 32-bit base from bytes [2..5]
-                if (m[5] > 0xD0) { // On x64, m[5] is the top byte of the 64-bit base; on x86 it's high byte of 32-bit base
-                    debug("0xD0 signature detected");
-                    found = true;
-                }
-
                 if ((idt_base >> 24) == 0xE8) {
                     debug("VPC signature detected");
                     SetThreadAffinityMask(GetCurrentThread(), origMask);
@@ -5645,6 +5623,7 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
             constexpr DWORD FIRM_SIG = 'FIRM';
             constexpr DWORD RSMB_SIG = 'RSMB';
 
+            // "WAET" string is also present inside the WAET table, so there's no need to check for its table signature
             constexpr std::array<const char*, 24> targets = { {
                 "Parallels Software", "Parallels(R)",
                 "innotek",            "Oracle",   "VirtualBox", "vbox", "VBOX",
@@ -5689,7 +5668,7 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
 
                     // 1b) power/adapter objects
                     if (contains("PWRB", 4) && contains("SLPB", 4) && contains("ACAD", 4)) {
-                        debug("FIRMWARE: VM‐specific power/adapter objects detected");
+                        debug("FIRMWARE: VM-specific power/adapter objects detected");
                         return true;
                     }
                 }
@@ -5718,7 +5697,22 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
                             memcmp(buf + i, pat, plen) == 0)
                         {
                             debug("FIRMWARE: Detected ", pat);
+
                             const char* brand = brands_map[ti];
+
+                            // special handling for Xen: must not be PXEN
+                            if (strcmp(pat, "Xen") == 0) {
+                                constexpr char pxen[] = "PXEN";
+                                constexpr size_t pxen_len = sizeof(pxen) - 1;
+                                bool has_pxen = std::search(buf, buf + len, pxen, pxen + pxen_len) != (buf + len);
+                                if (!has_pxen) {
+                                    return (brand ? core::add(brands::XEN) : true);
+                                }
+                                else {
+                                    continue;
+                                }
+                            }
+
                             return (brand ? core::add(brand) : true);
                         }
                     }
@@ -5736,6 +5730,20 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
                     }
                 }
 
+                // 5) KVM ACPI Device() signature: 5B 82 40 09 53 XX XX
+                if (len >= 7) {
+                    for (size_t i = 0; i + 7 <= len; ++i) {
+                        if (buf[i] == 0x5B &&
+                            buf[i + 1] == 0x82 &&
+                            buf[i + 2] == 0x40 &&
+                            buf[i + 3] == 0x09 &&
+                            buf[i + 4] == 0x53) // 'S'
+                        {
+                            debug("FIRMWARE: KVM ACPI Device pattern matched at offset ", i);
+                            return core::add(brands::KVM);
+                        }
+                    }
+                }
                 return false;
             };
 
@@ -6019,10 +6027,8 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
 
         enum RootType { RT_PCI, RT_USB, RT_HDAUDIO };
 
-        //
         // Lambda #1: Process the MULTI_SZ “HardwareID” on an instance key,
         // extract every (VID, DID) pair, and push into devices
-        //
         auto processHardwareID = [&](HKEY hInst, RootType rootType) {
             DWORD type = 0, cbData = 0;
             LONG rv = RegGetValueW(
@@ -6116,16 +6122,13 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
                 }
 
                 if (ok) {
-                    // push every matching (VID, DID) pair
                     devices.push_back({ vid, did });
                 }
             }
         };
 
-        //
         // Lambda #2: Enumerate all “Instance” subkeys under a given “Device” key,
         // and for each instance, open it and call processHardwareID()
-        //
         auto enumInstances = [&](HKEY hDev, RootType rootType) {
             for (DWORD j = 0;; ++j) {
                 wchar_t instName[256];
@@ -6157,10 +6160,8 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
             }
         };
 
-        //
         // Lambda #3: Enumerate all “Device” subkeys under a given root key,
         // open each device key, and call enumInstances()
-        //
         auto enumDevices = [&](HKEY hRoot, RootType rootType) {
             for (DWORD i = 0;; ++i) {
                 wchar_t deviceName[256];
@@ -6192,11 +6193,9 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
             }
         };
 
-        //
         // Top‐level loop: for each rootPath, open the root key once, compute its RootType,
         // then call enumDevices()
-        //
-        for (int rootIdx = 0; rootIdx < _countof(kRoots); ++rootIdx) {
+        for (size_t rootIdx = 0; rootIdx < _countof(kRoots); ++rootIdx) {
             const wchar_t* rootPath = kRoots[rootIdx];
             HKEY hRoot = nullptr;
             if (RegOpenKeyExW(
@@ -6326,6 +6325,28 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
     }
 #endif
 
+#if (LINUX || APPLE)
+    /**
+     * @brief Check if there are only 1 or 2 threads, which is a common pattern in VMs with default settings (nowadays physical CPUs should have at least 4 threads for modern CPUs
+     * @category x86 (ARM might have very low thread counts, which is why it should be only for x86)
+     * @implements VM::THREAD_COUNT
+     */
+    [[nodiscard]] static bool thread_count() {
+    #if (x86)
+        debug("THREADCOUNT: ", "threads = ", std::thread::hardware_concurrency());
+
+        struct cpu::stepping_struct steps = cpu::fetch_steppings();
+
+        if (cpu::is_celeron(steps)) {
+            return false;
+        }
+
+        return (std::thread::hardware_concurrency() <= 2);
+    #else 
+        return false;
+    #endif
+    }
+#endif
 
 #if (APPLE) 
     /**
@@ -7013,9 +7034,7 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
     /**
      * @brief Check for sgdt instruction method
      * @category Windows, x86
-     * @author Danny Quist (chamuco@gmail.com) (top-most byte signature)
-     * @author Val Smith (mvalsmith@metasploit.com) (top-most byte signature)
-     * @author code documentation paper in /papers/www.offensivecomputing.net_vm.pdf (top-most byte signature)
+     * @note code documentation paper in /papers/www.offensivecomputing.net_vm.pdf (top-most byte signature)
      * @implements VM::SGDT
      */
     [[nodiscard]] static bool sgdt() {
@@ -7051,12 +7070,6 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
             #endif
             }
             __except (EXCEPTION_EXECUTE_HANDLER) {} // CR4.UMIP
-
-            // On x64, gdtr[5] is the top byte of the 64-bit base; on x86 it's high byte of 32-bit base
-            if (gdtr[5] > 0xD0) {
-                debug("SGDT: top-most byte signature detected");
-                found = true;
-            }
 
             // 0xFF signature in the high byte of the 32-bit base
             if ((gdt_base >> 24) == 0xFF) {
@@ -8349,14 +8362,12 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
         if (!execMem) {
             return false;
         }
-        // copy payload
         memcpy(execMem, trampoline, trampSize);
 
-        // variables to track detection
         bool hypervisorCaught = false;
         int hitCount = 0;
 
-        // prepare debug context for current thread
+        // debug context for current thread
         CONTEXT dbgCtx{};
         dbgCtx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
         HANDLE thr = GetCurrentThread();
@@ -8403,9 +8414,178 @@ private: // START OF PRIVATE VM DETECTION TECHNIQUE DEFINITIONS
 
         return hypervisorCaught;
     }
+
+
+    /**
+     * @brief Check if after executing an undefined instruction, a hypervisor misinterpret it as a system call
+     * @category Windows
+     * @implements VM::UD
+     */
+    [[nodiscard]] static bool ud() {
+    #if (MSVC && !CLANG)
+        bool saw_ud = false;
+
+        __try {
+            __ud2();  
+        }
+        __except (GetExceptionCode() == EXCEPTION_ILLEGAL_INSTRUCTION
+            ? EXCEPTION_EXECUTE_HANDLER
+            : EXCEPTION_CONTINUE_SEARCH)
+        {
+            saw_ud = true;
+        }
+
+        return (!saw_ud) ? true : false; // if #UD did not happen, hypervisor may be present
+    #else
+        return false;
+    #endif
+    }
+
+
+    /**
+     * @brief Check if a hypervisor does not properly restore the interruptibility state after a VM-exit in compatibility mode
+     * @category Windows
+     * @implements VM::BLOCKSTEP
+     */
+    [[nodiscard]] static bool blockstep() {  
+    #if (x86_32 && MSVC && !CLANG)
+        volatile int saw_single_step = 0;
+
+        __try
+        {
+            __asm
+            {
+                // set TF in EFLAGS
+                pushfd
+                or dword ptr[esp], 0x100
+                popfd
+
+                // execute MOV SS,AX (reload SS with itself) to force the “interruptible state” block
+                mov ax, ss
+                mov ss, ax // this blocks any debug exception for exactly one instruction
+
+                // because TF was set, CPUID would normally cause a #DB on the next instruction.
+                xor eax, eax
+                cpuid
+
+                // one extra instruction: on bare metal, TF’s single-step now fires here
+                nop
+
+                pushfd
+                and dword ptr[esp], 0xFFFFFEFF
+                popfd
+            }
+        }
+        __except (GetExceptionCode() == EXCEPTION_SINGLE_STEP
+            ? EXCEPTION_EXECUTE_HANDLER
+            : EXCEPTION_CONTINUE_SEARCH)
+        {
+            saw_single_step = 1;
+        }
+        return (saw_single_step == 0) ? true : false;
+    #else
+        return false;
+    #endif
+    }
+
+
+    /**
+     * @brief Check if Dark Byte's VM is present
+     * @category Windows
+     * @author Requiem (https://github.com/NotRequiem)
+     * @implements VM::DBVM
+     */
+    [[nodiscard]] static bool dbvm() {
+    #if (!x86_64)
+        return false;
+    #else
+        const u64 PW1 = 0x0000000076543210ULL;
+        const u64 PW3 = 0x0000000090909090ULL;
+        const u32 PW2 = 0xFEDCBA98U;
+
+        struct VMCallInfo { u32 structsize; u32 level2pass; u32 command; };
+        VMCallInfo vmcallInfo = {};
+        u64 vmcallResult = 0;
+
+        unsigned char intelTemplate[44] = {
+            0x48,0xBA,0,0,0,0,0,0,0,0,                     // mov rdx, imm64   ; PW1
+            0x48,0xB9,0,0,0,0,0,0,0,0,                     // mov rcx, imm64   ; PW3
+            0x48,0xB8,0,0,0,0,0,0,0,0,                     // mov rax, imm64   ; &vmcallInfo
+            0x0F,0x01,0xC1,                                // vmcall
+            0x48,0xA3,0,0,0,0,0,0,0,0,                     // mov [imm64], rax ; &vmcallResult
+            0xC3                                           // ret
+        };
+        unsigned char amdTemplate[44] = {
+            0x48,0xBA,0,0,0,0,0,0,0,0,                     // mov rdx, imm64   ; PW1
+            0x48,0xB9,0,0,0,0,0,0,0,0,                     // mov rcx, imm64   ; PW3
+            0x48,0xB8,0,0,0,0,0,0,0,0,                     // mov rax, imm64   ; &vmcallInfo
+            0x0F,0x01,0xD9,                                // vmmcall (AMD)
+            0x48,0xA3,0,0,0,0,0,0,0,0,                     // mov [imm64], rax ; &vmcallResult
+            0xC3                                           // ret
+        };
+
+        void* intelStub = VirtualAlloc(nullptr, 44, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        void* amdStub = VirtualAlloc(nullptr, 44, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        if (!intelStub || !amdStub) {
+            if (intelStub) VirtualFree(intelStub, 0, MEM_RELEASE);
+            if (amdStub)   VirtualFree(amdStub, 0, MEM_RELEASE);
+            return false;
+        }
+
+        memcpy(intelStub, intelTemplate, 44);
+        memcpy(amdStub, amdTemplate, 44);
+
+        // patch in the immediate values (PW1, PW3, &vmcallInfo, &vmcallResult) at the correct offsets:
+        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(intelStub) + 2) = PW1;
+        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(intelStub) + 12) = PW3;
+        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(intelStub) + 22) = reinterpret_cast<u64>(static_cast<void*>(&vmcallInfo));
+        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(intelStub) + 35) = reinterpret_cast<u64>(static_cast<void*>(&vmcallResult));
+
+        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(amdStub) + 2) = PW1;
+        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(amdStub) + 12) = PW3;
+        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(amdStub) + 22) = reinterpret_cast<u64>(static_cast<void*>(&vmcallInfo));
+        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(amdStub) + 35) = reinterpret_cast<u64>(static_cast<void*>(&vmcallResult));
+
+        // lambda that executes the stub (Intel or AMD) and checks for the Cheat Engine signature (0xCE in bits 24–31 of the result)
+        auto tryPass = [&](bool useAmd) -> bool {
+            vmcallInfo.structsize = static_cast<u32>(sizeof(VMCallInfo));
+            vmcallInfo.level2pass = PW2;
+            vmcallInfo.command = 0;
+            vmcallResult = 0;
+
+            __try {
+                if (useAmd) {
+                    reinterpret_cast<void(*)()>(amdStub)();
+                }
+                else {
+                    reinterpret_cast<void(*)()>(intelStub)();
+                }
+            }
+            __except (GetExceptionCode() == EXCEPTION_ILLEGAL_INSTRUCTION
+                ? EXCEPTION_EXECUTE_HANDLER
+                : EXCEPTION_CONTINUE_SEARCH) {
+                vmcallResult = 0;
+            }
+
+            // the VM returns status in bits 24–31; Cheat Engine uses 0xCE here
+            return (((vmcallResult >> 24) & 0xFF) == 0xCE);
+        };
+
+        bool found = false;
+        if (cpu::is_intel()) found = tryPass(false);       
+        else found = tryPass(true);       
+
+        VirtualFree(intelStub, 0, MEM_RELEASE);
+        VirtualFree(amdStub, 0, MEM_RELEASE);
+
+        if (found) return core::add(brands::DBVM);
+
+        return false;
+    #endif
+    }
     // ADD NEW TECHNIQUE FUNCTION HERE
     #endif
-    
+
     
     /* ============================================================================================== *
      *                                                                                                *                                                                                               *
@@ -9522,6 +9702,9 @@ public: // START OF PUBLIC FUNCTIONS
             case PCI_DEVICES: return "PCI_DEVICES";
             case QEMU_PASSTHROUGH: return "QEMU_PASSTHROUGH";
             case TRAP: return "TRAP";
+            case UD: return "UNDEFINED_INSTRUCTION";
+            case BLOCKSTEP: return "BLOCKSTEP";
+            case DBVM: return "DBVM";
             // END OF TECHNIQUE LIST
             case DEFAULT: return "setting flag, error";
             case ALL: return "setting flag, error";
@@ -9663,7 +9846,8 @@ public: // START OF PUBLIC FUNCTIONS
             { brands::LKVM, "Hypervisor (type 1)" },
             { brands::NOIRVISOR, "Hypervisor (type 1)" },
             { brands::WSL, "Hypervisor (Type 1)" }, // Type 1-derived lightweight VM system
-            
+            { brands::DBVM, "Hypervisor (Type 1)" }, 
+
             // type 2
             { brands::BHYVE, "Hypervisor (type 2)" },
             { brands::VBOX, "Hypervisor (type 2)" },
@@ -9932,6 +10116,7 @@ std::map<const char*, VM::brand_score_t> VM::core::brand_scoreboard{
     { brands::NOIRVISOR, 0 },
     { brands::NSJAIL, 0 },
     { brands::HYPERVISOR_PHANTOM, 0 },
+    { brands::DBVM, 0 },
     { brands::NULL_BRAND, 0 }
 };
 
@@ -9994,10 +10179,10 @@ std::pair<VM::enum_flags, VM::core::technique> VM::core::technique_list[] = {
     // FORMAT: { VM::<ID>, { certainty%, function pointer } },
     // START OF TECHNIQUE TABLE
     #if (WINDOWS)
-        std::make_pair(VM::GPU_CAPABILITIES, VM::core::technique(100, VM::gpu_capabilities)),
         std::make_pair(VM::TRAP, VM::core::technique(100, VM::trap)),
-        std::make_pair(VM::TPM, VM::core::technique(100, VM::tpm)),
+        std::make_pair(VM::GPU_CAPABILITIES, VM::core::technique(100, VM::gpu_capabilities)),
         std::make_pair(VM::QEMU_PASSTHROUGH, VM::core::technique(90, VM::qemu_passthrough)),
+        std::make_pair(VM::TPM, VM::core::technique(100, VM::tpm)),
         std::make_pair(VM::POWER_CAPABILITIES, VM::core::technique(90, VM::power_capabilities)),
         std::make_pair(VM::DISK_SERIAL, VM::core::technique(100, VM::disk_serial_number)),
         std::make_pair(VM::IVSHMEM, VM::core::technique(100, VM::ivshmem)),
@@ -10015,6 +10200,9 @@ std::pair<VM::enum_flags, VM::core::technique> VM::core::technique_list[] = {
         std::make_pair(VM::AUDIO, VM::core::technique(25, VM::audio)),
         std::make_pair(VM::DISPLAY, VM::core::technique(35, VM::display)),
         std::make_pair(VM::DLL, VM::core::technique(50, VM::dll)),
+        std::make_pair(VM::DBVM, VM::core::technique(150, VM::dbvm)),
+        std::make_pair(VM::UD, VM::core::technique(100, VM::ud)),
+        std::make_pair(VM::BLOCKSTEP, VM::core::technique(100, VM::blockstep)),
         std::make_pair(VM::VBOX_NETWORK, VM::core::technique(100, VM::vbox_network_share)),
         std::make_pair(VM::VMWARE_BACKDOOR, VM::core::technique(100, VM::vmware_backdoor)),
         std::make_pair(VM::WINE, VM::core::technique(100, VM::wine)),
@@ -10070,8 +10258,12 @@ std::pair<VM::enum_flags, VM::core::technique> VM::core::technique_list[] = {
         std::make_pair(VM::AMD_SEV, VM::core::technique(50, VM::amd_sev)),
         std::make_pair(VM::TEMPERATURE, VM::core::technique(80, VM::temperature)),
         std::make_pair(VM::PROCESSES, VM::core::technique(40, VM::processes)),
+    #endif    
+
+    #if (LINUX || APPLE)
+        std::make_pair(VM::THREAD_COUNT, VM::core::technique(35, VM::thread_count)),
     #endif
-        
+
     #if (APPLE)
         std::make_pair(VM::MAC_MEMSIZE, VM::core::technique(15, VM::hw_memsize)),
         std::make_pair(VM::MAC_IOKIT, VM::core::technique(100, VM::io_kit)),
@@ -10084,12 +10276,11 @@ std::pair<VM::enum_flags, VM::core::technique> VM::core::technique_list[] = {
     std::make_pair(VM::INTEL_THREAD_MISMATCH, VM::core::technique(95, VM::intel_thread_mismatch)),
     std::make_pair(VM::AMD_THREAD_MISMATCH, VM::core::technique(95, VM::amd_thread_mismatch)),
     std::make_pair(VM::XEON_THREAD_MISMATCH, VM::core::technique(95, VM::xeon_thread_mismatch)),
-    std::make_pair(VM::HYPERVISOR_BIT, VM::core::technique(100, VM::hypervisor_bit)),
     std::make_pair(VM::VMID, VM::core::technique(100, VM::vmid)),
     std::make_pair(VM::CPU_BRAND, VM::core::technique(95, VM::cpu_brand)),
     std::make_pair(VM::CPUID_SIGNATURE, VM::core::technique(95, VM::cpuid_signature)),
-    std::make_pair(VM::THREAD_COUNT, VM::core::technique(35, VM::thread_count)),
     std::make_pair(VM::HYPERVISOR_STR, VM::core::technique(75, VM::hypervisor_str)),
+    std::make_pair(VM::HYPERVISOR_BIT, VM::core::technique(100, VM::hypervisor_bit)),
     std::make_pair(VM::ODD_CPU_THREADS, VM::core::technique(80, VM::odd_cpu_threads)),
     std::make_pair(VM::BOCHS_CPU, VM::core::technique(100, VM::bochs_cpu)),
     std::make_pair(VM::KGT_SIGNATURE, VM::core::technique(80, VM::intel_kgt_signature))
