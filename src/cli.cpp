@@ -48,7 +48,7 @@
 
 #include "vmaware.hpp"
 
-constexpr const char* ver = "2.4.0";
+constexpr const char* ver = "2.4.1";
 constexpr const char* date = "June 2025";
 
 std::string bold = "\033[1m";
@@ -276,7 +276,7 @@ Neko Project II
 NoirVisor
 Qihoo 360 Sandbox
 nsjail
-Hypervisor-Phantom
+DBVM
 )";
 
     std::exit(0);
@@ -415,7 +415,7 @@ std::string vm_description(const std::string& vm_brand) {
         { brands::BHYVE, "bhyve (pronounced \"bee hive\", formerly written as BHyVe for \"BSD hypervisor\") is a free type 2 hosted hypervisor initially written for FreeBSD. It can also be used on a number of illumos based distributions including SmartOS, OpenIndiana, and OmniOS. bhyve has a modern codebase and uses fewer resources compared to its competitors. In the case of FreeBSD, the resource management is more efficient." },
         { brands::KVM, "KVM is a free and open source module of the Linux kernel released in 2007. It uses hardware virtualization extensions, and has had support for hot swappable vCPUs, dynamic memory management, and Live Migration. It also reduces the impact that memory write-intensive workloads have on the migration process. KVM emulates very little hardware components, and it defers to a higher-level client application such as QEMU." },
         { brands::QEMU, "The Quick Emulator (QEMU) is a free and open-source emulator that uses dynamic binary translation to emulate a computer's processor. It translates the emulated binary codes to an equivalent binary format which is executed by the machine. It provides a variety of hardware and device models for the VM, while often being combined with KVM. However, no concrete evidence of KVM was found for this system." },
-        { brands::QEMU_KVM, "QEMU (a free and open-source emulator that uses dynamic binary translation to emulate a computer's processor) is being used with Kernel-based Virtual Machine (KVM, a free and open source module of the Linux kernel) to emulate hardware at near-native speeds." },
+        { brands::QEMU_KVM, "QEMU (a free and open-source emulator that uses dynamic binary translation to emulate a computer's processor) is being used with Kernel-based Virtual Machine (KVM, a free and open source module of the Linux kernel) to virtualize hardware at near-native speeds." },
         { brands::KVM_HYPERV, "KVM-HyperV integration allows Linux KVM hosts to expose Hyper-V-compatible paravirtualization interfaces to Windows guests. Enables performance optimizations like enlightened VMCS (Virtual Machine Control Structure) and TSC (Time Stamp Counter) synchronization, reducing overhead for Windows VMs running on Linux hypervisors." },
         { brands::QEMU_KVM_HYPERV, "A QEMU/KVM virtual machine with Hyper-V enlightenments. These features make Windows and Hyper-V guests think they’re running on top of a Hyper-V compatible hypervisor and use Hyper-V specific features." },
         { brands::HYPERV, "Hyper-V is Microsoft's proprietary native hypervisor that can create x86 VMs on Windows. Released in 2008, it supercedes previous virtualization solutions such as Microsoft Virtual Server and Windows VirtualPC. Hyper-V uses partitioning to isolate the guest OSs, and has \"enlightenment\" features for bypassing device emulation layers, allowing for faster execution including when Windows is virtualized on Linux." },
@@ -470,7 +470,7 @@ std::string vm_description(const std::string& vm_brand) {
         { brands::NOIRVISOR, "NoirVisor is a hardware-accelerated hypervisor with support to complex functions and purposes. It is designed to support processors based on x86 architecture with hardware-accelerated virtualization feature. For example, Intel processors supporting Intel VT-x or AMD processors supporting AMD-V meet the requirement. It was made by Zero-Tang." },
         { brands::QIHOO, "360 sandbox is a part of 360 Total Security. Similar to other sandbox software, it provides a virtualized environment where potentially malicious or untrusted programs can run without affecting the actual system. Qihoo 360 Sandbox is commonly used for testing unknown applications, analyzing malware behavior, and protecting users from zero-day threats." },
         { brands::NSJAIL, "nsjail is a process isolation tool for Linux. It utilizes Linux namespace subsystem, resource limits, and the seccomp-bpf syscall filters of the Linux kernel. It can be used for isolating networking services, CTF challenges, and containing invasive syscall-level OS fuzzers." },
-        { brands::HYPERVISOR_PHANTOM, "Hypervisor-Phantom is an automated setup solution designed to evade detection from advanced malware, enabling thorough analysis. It employs a highly customized version of QEMU/KVM, EDK2, and the Linux Kernel. This also spoofs many unique hypervisor identifiers, effectively disguising the environment. This setup enhances the accuracy and reliability of malware analysis by minimizing the risk of detection." },
+        { brands::DBVM, "DBVM is a ultra-lightweight virtual machine host that makes Windows run in a virtual machine so that Cheat Engine can operate at a higher level than the OS using a device driver. Instead of virtualizing devices it generally passes on interrupts unaltered meaning it has a very small impact on performance." },
         { brands::NULL_BRAND, "Indicates no detectable virtualization brand. This result may occur on bare-metal systems, unsupported/obscure hypervisors, or when anti-detection techniques (e.g., VM escaping) are employed by the guest environment." }
     };
 
@@ -729,7 +729,6 @@ void general() {
     checker(VM::HWMODEL, "hw.model");
     checker(VM::DISK_SIZE, "disk size");
     checker(VM::VBOX_DEFAULT, "VBox default specs");
-    checker(VM::VBOX_NETWORK, "VBox network provider match");
     checker(VM::PROCESSES, "processes");
     checker(VM::LINUX_USER_HOST, "default Linux user/host");
     checker(VM::GAMARUE, "gamarue ransomware technique");
@@ -795,8 +794,12 @@ void general() {
     checker(VM::NSJAIL_PID, "nsjail PID");
     checker(VM::TPM, "TPM manufacturer");
     checker(VM::PCI_DEVICES, "PCI vendor/device ID");
-    checker(VM::QEMU_PASSTHROUGH, "QEMU passthrough");
+    checker(VM::QEMU_SIGNATURE, "QEMU signature");
     checker(VM::TRAP, "hypervisor interception");
+    checker(VM::UD, "undefined exceptions");
+    checker(VM::BLOCKSTEP, "single step with trap flag");
+    checker(VM::DBVM, "Dark Byte's hypervisor");
+    checker(VM::BOOT_LOGO, "boot logo");
 
     // ADD NEW TECHNIQUE CHECKER HERE
 

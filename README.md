@@ -244,7 +244,8 @@ And if you found this project useful, a star would be appreciated :)
 <br>
 
 ## Credits, contributors, and acknowledgements ✒️
-- [Requiem](https://github.com/NotRequiem) (Co-developer)
+- [kernelwernel](https://github.com/kernelwernel) (Maintainer and developer)
+- [Requiem](https://github.com/NotRequiem) (Maintainer and co-developer)
 - [Check Point Research](https://research.checkpoint.com/)
 - [Unprotect Project](https://unprotect.it/)
 - [Al-Khaser](https://github.com/LordNoteworthy/al-khaser)
@@ -275,6 +276,7 @@ And if you found this project useful, a star would be appreciated :)
 - [Jyd](https://github.com/jyd519)
 - [git-eternal](https://github.com/git-eternal)
 - [dmfrpro](https://github.com/dmfrpro)
+- [Teselka](https://github.com/Teselka)
 
 <br>
 
